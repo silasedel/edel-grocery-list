@@ -24,7 +24,8 @@ h1{font-size:30px;margin:0;font-weight:700}
 .dot.on{background:var(--accent);box-shadow:0 0 0 3px #bdf0cf}
 button{font:inherit;cursor:pointer;color:inherit}
 .pill{border:0;background:var(--card);backdrop-filter:blur(8px);border-radius:999px;padding:8px 14px;font-weight:500;box-shadow:0 4px 14px rgba(40,110,70,.12)}
-.top{display:flex;gap:8px}
+.top{display:flex;gap:8px;flex:none}
+@media (max-width:480px){header{flex-wrap:wrap}h1{font-size:26px}.top{width:100%}.top .pill{flex:1;padding:10px}.wrap{padding-top:calc(16px + env(safe-area-inset-top))}.item{padding:16px 14px}.del{font-size:26px;padding:0 8px}}
 form{display:flex;gap:8px;background:var(--card);backdrop-filter:blur(10px);border-radius:20px;padding:7px;box-shadow:0 8px 24px rgba(40,110,70,.14)}
 input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font-size:17px;padding:10px 12px;outline:none;min-width:0}
 .add{background:var(--accent);color:#fff;border:0;border-radius:14px;padding:0 20px;font-weight:600;font-size:16px;transition:transform .15s}
@@ -66,7 +67,7 @@ input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font
     <div><h1>🛒 Edel Groceries</h1><div class="sub"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div></div>
     <div class="top"><button class="pill" id="logBtn">📜 Log</button><button class="pill" id="who"></button></div>
   </header>
-  <form id="f"><input id="q" placeholder="What do we need? 🥕" autocomplete="off" enterkeyhint="done"><button class="add">Add</button></form>
+  <form id="f"><input id="q" placeholder="What do we need?" autocomplete="off" enterkeyhint="done"><button class="add">Add</button></form>
   <div class="list" id="list"></div>
   <div class="bar"><span id="count"></span><button class="link" id="clear">Clear checked</button></div>
 </div>
@@ -167,7 +168,7 @@ function render() {
   for (const v of list) {
     const row = document.createElement("div");
     row.className = "item" + (v.done ? " done" : "");
-    row.innerHTML = `<button class="check">${v.done ? "✓" : ""}</button><div class="emo">${emoji(v.name)}</div><div class="name"></div><button class="del" title="Remove">×</button>`;
+    row.innerHTML = `<button class="check">${v.done ? "✓" : ""}</button><div class="name"></div><button class="del" title="Remove">×</button>`;
     row.querySelector(".name").textContent = v.name;
     const sub = v.done && v.got ? `✅ ${v.got} got it` : v.by ? `added by ${v.by}` : "";
     if (sub) { const b = document.createElement("div"); b.className = "by"; b.textContent = sub; row.querySelector(".name").append(b); }

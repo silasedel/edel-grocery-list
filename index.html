@@ -72,7 +72,7 @@ input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font
   <div class="bar"><span id="count"></span><button class="link" id="clear">Clear checked</button></div>
 </div>
 
-<div class="modal" id="whoM"><div class="sheet"><button class="close" data-close>×</button><h2>Who's this? 👋</h2><div class="people" id="people"></div></div></div>
+<div class="modal" id="whoM"><div class="sheet"><button class="close" data-close>×</button><h2>Who's this?</h2><div class="people" id="people"></div></div></div>
 <div class="modal" id="logM"><div class="sheet"><button class="close" data-close>×</button><h2>📜 Activity log</h2><div id="logList"></div></div></div>
 
 <script>
@@ -104,18 +104,18 @@ const ava = name => AVATARS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) %
 
 // Who am I — tap a face, no typing
 let me = localStorage.getItem("name");
-const setWho = () => $("who").textContent = me ? ava(me) + " " + me : "👋 Who are you?";
+const setWho = () => $("who").textContent = me ? me : "Who are you?";
 function openWho() {
   $("people").innerHTML = "";
   for (const p of data.people) {
     const b = document.createElement("button");
     b.className = "person" + (p === me ? " sel" : "");
-    b.innerHTML = `<span>${ava(p)}</span>`; b.append(p);
+    b.textContent = p;
     b.onclick = () => { me = p; localStorage.setItem("name", me); setWho(); $("whoM").classList.remove("open"); };
     $("people").append(b);
   }
   const add = document.createElement("button");
-  add.className = "person"; add.innerHTML = "<span>➕</span>Add person";
+  add.className = "person"; add.textContent = "+ Add person";
   add.onclick = () => { const n = (prompt("Name?") || "").trim().slice(0, 20); if (n && !data.people.includes(n)) change(d => { d.people.includes(n) || d.people.push(n); }).then(openWho); };
   $("people").append(add);
   $("whoM").classList.add("open");
@@ -191,7 +191,7 @@ function renderLog() {
     const row = document.createElement("div"); row.className = "log";
     const t = document.createElement("div"); t.textContent = `${l.who} ${l.text}`;
     const s = document.createElement("small"); s.textContent = ago(l.at); t.append(s);
-    row.innerHTML = `<div style="font-size:24px">${ava(l.who)}</div>`; row.append(t);
+    row.append(t);
     el.append(row);
   }
 }

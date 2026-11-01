@@ -49,50 +49,69 @@ button{font:inherit;cursor:pointer}
   <div class="list" id="list"></div>
   <div class="bar"><span id="count"></span><button class="link" id="clear">Clear checked</button></div>
 </div>
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, push, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js";
-
-const db = getDatabase(initializeApp(firebaseConfig));
-const itemsRef = ref(db, "items");
+<script>
+const API = "https://api.restful-api.dev/objects/ff808181a09d98f701a197e2c27d00c4";
 const $ = id => document.getElementById(id);
-let items = {};
+let items = [];
 
 let me = localStorage.getItem("name");
 const setWho = () => $("who").textContent = me ? "👤 " + me : "Set your name";
 $("who").onclick = () => { const n = prompt("Your name?", me || ""); if (n !== null) { me = n.trim(); localStorage.setItem("name", me); setWho(); } };
 setWho();
 
-onValue(ref(db, ".info/connected"), s => { $("dot").classList.toggle("on", !!s.val()); $("status").textContent = s.val() ? "Live · synced for everyone" : "Offline"; });
-onValue(itemsRef, s => { items = s.val() || {}; render(); });
+function status(ok) { $("dot").classList.toggle("on", ok); $("status").textContent = ok ? "Live · shared with everyone" : "Can't connect, retrying…"; }
+
+async function load() {
+  try {
+    const r = await fetch(API, { cache: "no-store" });
+    items = (await r.json()).data.items || [];
+    status(true); render();
+  } catch { status(false); }
+}
+
+// Fetch the latest list, apply the change, save it back
+async function change(fn) {
+  fn(items); render();
+  try {
+    const r = await fetch(API, { cache: "no-store" });
+    const latest = (await r.json()).data.items || [];
+    fn(latest);
+    await fetch(API, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "edel-grocery", data: { items: latest } }) });
+    items = latest; status(true); render();
+  } catch { status(false); }
+}
 
 $("f").onsubmit = e => {
   e.preventDefault();
   const name = $("q").value.trim().slice(0, 100);
   if (!name) return;
-  push(itemsRef, { name, done: false, by: me || "", at: Date.now() });
+  const item = { id: Date.now() + "" + Math.random().toString(36).slice(2, 6), name, done: false, by: me || "", at: Date.now() };
+  change(l => l.push(item));
   $("q").value = "";
 };
-$("clear").onclick = () => Object.entries(items).forEach(([k, v]) => v.done && remove(ref(db, "items/" + k)));
+$("clear").onclick = () => change(l => { for (let i = l.length - 1; i >= 0; i--) if (l[i].done) l.splice(i, 1); });
 
 function render() {
-  const list = Object.entries(items).sort((a, b) => (a[1].done - b[1].done) || (b[1].at - a[1].at));
+  const list = [...items].sort((a, b) => (a.done - b.done) || (b.at - a.at));
   $("list").innerHTML = "";
   if (!list.length) $("list").innerHTML = '<div class="empty">Nothing on the list yet 🎉</div>';
-  for (const [k, v] of list) {
+  for (const v of list) {
     const row = document.createElement("div");
     row.className = "item" + (v.done ? " done" : "");
     row.innerHTML = `<button class="check">${v.done ? "✓" : ""}</button><div class="name"></div><button class="del" title="Remove">×</button>`;
     row.querySelector(".name").textContent = v.name;
     if (v.by) { const b = document.createElement("div"); b.className = "by"; b.textContent = v.by; row.querySelector(".name").append(b); }
-    row.querySelector(".check").onclick = () => update(ref(db, "items/" + k), { done: !v.done });
-    row.querySelector(".del").onclick = () => remove(ref(db, "items/" + k));
+    row.querySelector(".check").onclick = () => change(l => { const x = l.find(i => i.id === v.id); if (x) x.done = !x.done; });
+    row.querySelector(".del").onclick = () => change(l => { const i = l.findIndex(i => i.id === v.id); if (i > -1) l.splice(i, 1); });
     $("list").append(row);
   }
-  const left = list.filter(([, v]) => !v.done).length;
+  const left = list.filter(v => !v.done).length;
   $("count").textContent = `${left} item${left === 1 ? "" : "s"} left`;
 }
+
+load();
+setInterval(() => { if (!document.hidden) load(); }, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 </script>
 </body>
 </html>

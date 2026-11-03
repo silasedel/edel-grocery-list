@@ -31,7 +31,8 @@ input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font
 .add{background:var(--accent);color:#fff;border:0;border-radius:14px;padding:0 20px;font-weight:600;font-size:16px;transition:transform .15s}
 .add:active{transform:scale(.92)}
 .list{margin-top:16px;background:var(--card);backdrop-filter:blur(10px);border-radius:20px;overflow:hidden;box-shadow:0 8px 24px rgba(40,110,70,.12)}
-.item{display:flex;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid var(--line);animation:pop .3s ease}
+.item{display:flex;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid var(--line)}
+.item.new{animation:pop .3s ease}
 @keyframes pop{from{opacity:0;transform:translateY(6px)}}
 .item:first-child{border-top:0}
 .emo{font-size:24px;width:30px;text-align:center}
@@ -128,25 +129,30 @@ setWho();
 function status(ok) { $("dot").classList.toggle("on", ok); $("status").textContent = ok ? "Live · shared with the fam" : "Can't connect, retrying…"; }
 const norm = d => ({ items: d.items || [], log: d.log || [], people: d.people && d.people.length ? d.people : ["Mom", "Dad", "Silas"] });
 
+let busy = 0, lastJson = "", seen = new Set();
 async function load() {
+  if (busy) return;
   try {
     const r = await fetch(API, { cache: "no-store" });
-    data = norm((await r.json()).data);
-    status(true); render();
+    const d = norm((await r.json()).data);
+    if (busy) return;
+    data = d; status(true); render();
   } catch { status(false); }
 }
 
 // Fetch the latest list, apply the change, save it back
 async function change(fn) {
-  fn(data); render();
+  fn(data); render(); busy++;
   try {
     const r = await fetch(API, { cache: "no-store" });
     const latest = norm((await r.json()).data);
     fn(latest);
     latest.log = latest.log.slice(-200);
     await fetch(API, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "edel-grocery", data: latest }) });
-    data = latest; status(true); render();
+    if (busy === 1) data = latest;
+    status(true); render();
   } catch { status(false); }
+  finally { busy--; }
 }
 const logIt = (d, text) => d.log.push({ who: me || "Someone", text, at: Date.now() });
 
@@ -162,12 +168,15 @@ $("f").onsubmit = e => {
 $("clear").onclick = () => change(d => { d.items = d.items.filter(i => !i.done); });
 
 function render() {
+  const json = JSON.stringify(data.items);
+  if (json === lastJson) return;
+  lastJson = json;
   const list = [...data.items].sort((a, b) => (a.done - b.done) || (b.at - a.at));
   $("list").innerHTML = "";
   if (!list.length) $("list").innerHTML = '<div class="empty">🧺 All stocked up!</div>';
   for (const v of list) {
     const row = document.createElement("div");
-    row.className = "item" + (v.done ? " done" : "");
+    row.className = "item" + (v.done ? " done" : "") + (seen.size && !seen.has(v.id) ? " new" : "");
     row.innerHTML = `<button class="check">${v.done ? "✓" : ""}</button><div class="name"></div><button class="del" title="Remove">×</button>`;
     row.querySelector(".name").textContent = v.name;
     const sub = v.done && v.got ? `✅ ${v.got} got it` : v.by ? `added by ${v.by}` : "";
@@ -179,6 +188,7 @@ function render() {
     row.querySelector(".del").onclick = () => change(d => { const i = d.items.findIndex(i => i.id === v.id); if (i > -1) { logIt(d, `removed ${d.items[i].name}`); d.items.splice(i, 1); } });
     $("list").append(row);
   }
+  list.forEach(v => seen.add(v.id)); if (!seen.size) seen.add("");
   const left = list.filter(v => !v.done).length;
   $("count").textContent = `${left} item${left === 1 ? "" : "s"} left`;
 }

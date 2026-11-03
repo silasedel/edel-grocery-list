@@ -130,11 +130,15 @@ function status(ok) { $("dot").classList.toggle("on", ok); $("status").textConte
 const norm = d => ({ items: d.items || [], log: d.log || [], people: d.people && d.people.length ? d.people : ["Mom", "Dad", "Silas"] });
 
 let busy = 0, lastJson = "", seen = new Set();
+async function get() {
+  const r = await fetch(API + "?t=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status);
+  return norm((await r.json()).data);
+}
 async function load() {
   if (busy) return;
   try {
-    const r = await fetch(API, { cache: "no-store" });
-    const d = norm((await r.json()).data);
+    const d = await get();
     if (busy) return;
     data = d; status(true); render();
   } catch { status(false); }
@@ -144,15 +148,15 @@ async function load() {
 async function change(fn) {
   fn(data); render(); busy++;
   try {
-    const r = await fetch(API, { cache: "no-store" });
-    const latest = norm((await r.json()).data);
+    const latest = await get();
     fn(latest);
     latest.log = latest.log.slice(-200);
-    await fetch(API, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "edel-grocery", data: latest }) });
+    const w = await fetch(API, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "edel-grocery", data: latest }) });
+    if (!w.ok) throw new Error(w.status);
     if (busy === 1) data = latest;
     status(true); render();
-  } catch { status(false); }
-  finally { busy--; }
+  } catch { status(false); alert("That change didn't save. Check your connection and try again."); }
+  finally { busy--; if (!busy) load(); }
 }
 const logIt = (d, text) => d.log.push({ who: me || "Someone", text, at: Date.now() });
 
@@ -207,7 +211,7 @@ function renderLog() {
 }
 
 load().then(() => { if (!me) openWho(); });
-setInterval(() => { if (!document.hidden) load(); }, 20000);
+setInterval(() => { if (!document.hidden) load(); }, 45000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 </script>
 </body>

@@ -117,7 +117,7 @@ function openWho() {
   }
   const add = document.createElement("button");
   add.className = "person"; add.textContent = "+ Add person";
-  add.onclick = () => { const n = (prompt("Name?") || "").trim().slice(0, 20); if (n && !data.people.includes(n)) change(d => { d.people.includes(n) || d.people.push(n); }).then(openWho); };
+  add.onclick = () => { const n = (prompt("Name?") || "").trim().slice(0, 20); if (n && !data.people.includes(n)) change({ t: "person", n }).then(openWho); };
   $("people").append(add);
   $("whoM").classList.add("open");
 }
@@ -129,36 +129,65 @@ setWho();
 function status(ok) { $("dot").classList.toggle("on", ok); $("status").textContent = ok ? "Live · shared with the fam" : "Can't connect, retrying…"; }
 const norm = d => ({ items: d.items || [], log: d.log || [], people: d.people && d.people.length ? d.people : ["Mom", "Dad", "Silas"] });
 
-let busy = 0, lastJson = "", seen = new Set();
+let lastJson = "", seen = new Set(), flushing = false;
+// Changes are queued on this device and retried until the server confirms them
+let queue = [];
+try { queue = JSON.parse(localStorage.getItem("queue") || "[]"); } catch {}
+const saveQ = () => { try { localStorage.setItem("queue", JSON.stringify(queue)); } catch {} };
+
+function apply(d, op) {
+  const x = d.items.find(i => i.id === op.id);
+  if (op.t === "add" && !x) d.items.push(op.item);
+  if (op.t === "set" && x) Object.assign(x, op.v);
+  if (op.t === "del" && x) d.items.splice(d.items.indexOf(x), 1);
+  if (op.t === "clear") d.items = d.items.filter(i => !i.done);
+  if (op.t === "person" && !d.people.includes(op.n)) d.people.push(op.n);
+  if (op.log && !d.log.some(l => l.at === op.log.at && l.who === op.log.who)) d.log.push(op.log);
+}
+const withQueue = d => { queue.forEach(op => apply(d, op)); return d; };
+
 async function get() {
   const r = await fetch(API + "?t=" + Date.now(), { cache: "no-store" });
   if (!r.ok) throw new Error(r.status);
   return norm((await r.json()).data);
 }
 async function load() {
-  if (busy) return;
+  if (flushing) return;
   try {
     const d = await get();
-    if (busy) return;
-    data = d; status(true); render();
+    if (flushing) return;
+    data = withQueue(d); status(true); render();
+    if (queue.length) flush();
   } catch { status(false); }
 }
 
-// Fetch the latest list, apply the change, save it back
-async function change(fn) {
-  fn(data); render(); busy++;
+async function flush() {
+  if (flushing || !queue.length) return;
+  flushing = true;
   try {
-    const latest = await get();
-    fn(latest);
-    latest.log = latest.log.slice(-200);
-    const w = await fetch(API, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "edel-grocery", data: latest }) });
-    if (!w.ok) throw new Error(w.status);
-    if (busy === 1) data = latest;
+    while (queue.length) {
+      const batch = queue.slice();
+      const latest = await get();
+      batch.forEach(op => apply(latest, op));
+      latest.log = latest.log.slice(-200);
+      const w = await fetch(API, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "edel-grocery", data: latest }) });
+      if (!w.ok) throw new Error(w.status);
+      queue = queue.slice(batch.length); saveQ();
+      data = withQueue(latest);
+    }
     status(true); render();
-  } catch { status(false); alert("That change didn't save. Check your connection and try again."); }
-  finally { busy--; if (!busy) load(); }
+  } catch {
+    $("status").textContent = "Saving… (will keep retrying)";
+    setTimeout(flush, 5000);
+  } finally { flushing = false; }
 }
-const logIt = (d, text) => d.log.push({ who: me || "Someone", text, at: Date.now() });
+
+function change(op) {
+  if (op.log) op.log = { who: me || "Someone", text: op.log, at: Date.now() };
+  queue.push(op); saveQ();
+  apply(data, op); render();
+  return flush();
+}
 
 $("f").onsubmit = e => {
   e.preventDefault();
@@ -166,10 +195,10 @@ $("f").onsubmit = e => {
   if (!name) return;
   if (!me) return openWho();
   const item = { id: Date.now() + Math.random().toString(36).slice(2, 6), name, done: false, by: me, at: Date.now() };
-  change(d => { d.items.push(item); logIt(d, `added ${name}`); });
+  change({ t: "add", id: item.id, item, log: `added ${name}` });
   $("q").value = "";
 };
-$("clear").onclick = () => change(d => { d.items = d.items.filter(i => !i.done); });
+$("clear").onclick = () => change({ t: "clear" });
 
 function render() {
   const json = JSON.stringify(data.items);
@@ -187,9 +216,9 @@ function render() {
     if (sub) { const b = document.createElement("div"); b.className = "by"; b.textContent = sub; row.querySelector(".name").append(b); }
     row.querySelector(".check").onclick = () => {
       if (!me) return openWho();
-      change(d => { const x = d.items.find(i => i.id === v.id); if (!x) return; x.done = !x.done; x.got = x.done ? me : ""; if (x.done) logIt(d, `got ${x.name}`); });
+      change({ t: "set", id: v.id, v: { done: !v.done, got: v.done ? "" : me }, log: v.done ? null : `got ${v.name}` });
     };
-    row.querySelector(".del").onclick = () => change(d => { const i = d.items.findIndex(i => i.id === v.id); if (i > -1) { logIt(d, `removed ${d.items[i].name}`); d.items.splice(i, 1); } });
+    row.querySelector(".del").onclick = () => change({ t: "del", id: v.id, log: `removed ${v.name}` });
     $("list").append(row);
   }
   list.forEach(v => seen.add(v.id)); if (!seen.size) seen.add("");

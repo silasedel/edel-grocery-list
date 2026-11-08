@@ -256,6 +256,14 @@ function renderLog() {
   }
 }
 
+// One-time move: re-send every item the old version kept on this phone (resending is harmless)
+try {
+  const old = localStorage.getItem("cache");
+  if (old && !old.includes("edel_v2") && !localStorage.getItem("migrated")) {
+    for (const it of norm(JSON.parse(old)).items) if (it && it.id && it.name) queue.push({ t: "add", id: it.id, item: it });
+    saveQ(); localStorage.setItem("migrated", "1");
+  }
+} catch {}
 // Show the last list plus any unsent changes right away, even before the server answers
 try { const c = localStorage.getItem("cache"); data = withQueue(norm(c && c.includes("edel_v2") ? JSON.parse(c) : data)); render(); } catch {}
 load().then(() => { if (!me) openWho(); });

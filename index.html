@@ -62,7 +62,6 @@ input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font
 </style>
 </head>
 <body>
-<div id="bg"></div>
 <div class="wrap">
   <header>
     <div><h1>🛒 Edel Groceries</h1><div class="sub"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div></div>
@@ -82,22 +81,6 @@ const sb = supabase.createClient("https://qhjqaijkthmmpllgpspl.supabase.co", "sb
 const $ = id => document.getElementById(id);
 const AVATARS = ["🦊","🐻","🐼","🐸","🐨","🦁","🐯","🐵","🐰","🐧"];
 let data = { items: [], log: [], people: ["Mom", "Dad", "Silas"] };
-
-// Floating food background with parallax
-const FOODS = ["🥕","🍎","🥑","🍌","🥦","🍓","🧀","🥖","🍋","🍇","🌽","🥚","🍅","🥛","🍉","🫐"];
-const floats = FOODS.concat(FOODS.slice(0, 6)).map((e, i) => {
-  const el = document.createElement("div");
-  const depth = 0.2 + Math.random() * 0.8;
-  el.className = "f"; el.textContent = e;
-  el.style.cssText = `left:${Math.random()*95}%;top:${Math.random()*95}%;font-size:${18+depth*34}px;opacity:${.35+depth*.45};animation-delay:-${Math.random()*6}s`;
-  $("bg").append(el);
-  return { el, depth };
-});
-let mx = 0, my = 0, sy = 0;
-function moveBg() { for (const { el, depth } of floats) el.style.transform = `translate(${mx*depth*40}px,${my*depth*40 - sy*depth*0.4}px)`; }
-addEventListener("mousemove", e => { mx = e.clientX / innerWidth - .5; my = e.clientY / innerHeight - .5; moveBg(); });
-addEventListener("deviceorientation", e => { if (e.gamma == null) return; mx = e.gamma / 60; my = (e.beta - 40) / 60; moveBg(); });
-addEventListener("scroll", () => { sy = scrollY; moveBg(); });
 
 // Pick emoji for an item name
 const MAP = {milk:"🥛",egg:"🥚",bread:"🍞",apple:"🍎",banana:"🍌",carrot:"🥕",cheese:"🧀",avocado:"🥑",tomato:"🍅",chicken:"🍗",meat:"🥩",beef:"🥩",fish:"🐟",rice:"🍚",pasta:"🍝",coffee:"☕",tea:"🍵",juice:"🧃",water:"💧",butter:"🧈",lettuce:"🥬",salad:"🥗",potato:"🥔",onion:"🧅",garlic:"🧄",grape:"🍇",strawberr:"🍓",orange:"🍊",lemon:"🍋",watermelon:"🍉",corn:"🌽",broccoli:"🥦",pepper:"🫑",cookie:"🍪",chocolate:"🍫",ice:"🍦",pizza:"🍕",cereal:"🥣",yogurt:"🥛",soap:"🧼",paper:"🧻",chip:"🥔",candy:"🍬",cake:"🍰",honey:"🍯",bacon:"🥓",blueberr:"🫐",peach:"🍑",pear:"🍐",cucumber:"🥒",mushroom:"🍄",bagel:"🥯",soda:"🥤",wine:"🍷",beer:"🍺"};

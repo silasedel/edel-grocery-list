@@ -126,7 +126,7 @@ $("logBtn").onclick = () => { renderLog(); $("logM").classList.add("open"); };
 document.querySelectorAll(".modal").forEach(m => m.onclick = e => { if (e.target === m || e.target.hasAttribute("data-close")) m.classList.remove("open"); });
 setWho();
 
-function status(ok) { $("dot").classList.toggle("on", ok); $("status").textContent = ok ? "Live · shared with the fam" : "Can't connect, retrying…"; }
+function status(ok) { $("dot").classList.toggle("on", ok); $("status").textContent = ok ? "Live · shared with the fam" : "Offline, showing last saved list"; }
 const norm = d => ({ items: d.items || [], log: d.log || [], people: d.people && d.people.length ? d.people : ["Mom", "Dad", "Silas"] });
 
 let lastJson = "", seen = new Set(), flushing = false;
@@ -157,8 +157,9 @@ async function load() {
     const d = await get();
     if (flushing) return;
     data = withQueue(d); status(true); render();
+    try { localStorage.setItem("cache", JSON.stringify(d)); } catch {}
     if (queue.length) flush();
-  } catch { status(false); }
+  } catch { status(false); setTimeout(load, 30000); }
 }
 
 async function flush() {
@@ -178,7 +179,7 @@ async function flush() {
     status(true); render();
   } catch {
     $("status").textContent = "Saving… (will keep retrying)";
-    setTimeout(flush, 5000);
+    setTimeout(flush, 15000);
   } finally { flushing = false; }
 }
 
@@ -239,8 +240,9 @@ function renderLog() {
   }
 }
 
+try { const c = localStorage.getItem("cache"); if (c) { data = withQueue(norm(JSON.parse(c))); render(); } } catch {}
 load().then(() => { if (!me) openWho(); });
-setInterval(() => { if (!document.hidden) load(); }, 45000);
+setInterval(() => { if (!document.hidden) load(); }, 180000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 </script>
 </body>

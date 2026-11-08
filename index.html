@@ -76,8 +76,9 @@ input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font
 <div class="modal" id="whoM"><div class="sheet"><button class="close" data-close>×</button><h2>Who's this?</h2><div class="people" id="people"></div></div></div>
 <div class="modal" id="logM"><div class="sheet"><button class="close" data-close>×</button><h2>📜 Activity log</h2><div id="logList"></div></div></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-const API = "https://api.restful-api.dev/objects/ff808181a09d98f701a197e2c27d00c4";
+const sb = supabase.createClient("https://qhjqaijkthmmpllgpspl.supabase.co", "sb_publishable_wO3zgPkdNH2Effsy6ewrmg_XP5oLUqO", { auth: { persistSession: false } });
 const $ = id => document.getElementById(id);
 const AVATARS = ["🦊","🐻","🐼","🐸","🐨","🦁","🐯","🐵","🐰","🐧"];
 let data = { items: [], log: [], people: ["Mom", "Dad", "Silas"] };
@@ -147,39 +148,54 @@ function apply(d, op) {
 const withQueue = d => { queue.forEach(op => apply(d, op)); return d; };
 
 async function get() {
-  const r = await fetch(API + "?t=" + Date.now(), { cache: "no-store" });
-  if (!r.ok) throw new Error(r.status);
-  return norm((await r.json()).data);
+  const [i, l, p] = await Promise.all([
+    sb.from("edel_grocery_items").select("*"),
+    sb.from("edel_grocery_log").select("who,text,at").order("at", { ascending: false }).limit(200),
+    sb.from("edel_grocery_people").select("name"),
+  ]);
+  const err = i.error || l.error || p.error;
+  if (err) throw err;
+  return norm({
+    items: i.data.map(r => ({ id: r.id, name: r.name, done: r.done, by: r.added_by, got: r.got, at: r.at })),
+    log: l.data.reverse(),
+    people: ["Mom", "Dad", "Silas"].filter(n => !p.data.some(r => r.name === n)).concat(p.data.map(r => r.name)),
+  });
 }
 async function load() {
-  if (flushing) return;
   try {
     const d = await get();
-    if (flushing) return;
     data = withQueue(d); status(true); render();
-    try { localStorage.setItem("cache", JSON.stringify(d)); } catch {}
+    try { localStorage.setItem("cache", JSON.stringify({ ...d, edel_v2: 1 })); } catch {}
     if (queue.length) flush();
-  } catch { status(false); setTimeout(load, 30000); }
+  } catch { status(false); setTimeout(load, 15000); }
+}
+
+// Send one queued change; every op is safe to resend
+async function send(op) {
+  const T = sb.from("edel_grocery_items");
+  let r = { error: null };
+  if (op.t === "add") r = await T.upsert({ id: op.item.id, name: op.item.name, done: !!op.item.done, added_by: op.item.by || "", got: "", at: op.item.at }, { onConflict: "id", ignoreDuplicates: true });
+  if (op.t === "set") r = await T.update({ done: op.v.done, got: op.v.got || "" }).eq("id", op.id);
+  if (op.t === "del") r = await T.delete().eq("id", op.id);
+  if (op.t === "clear") r = await T.delete().eq("done", true);
+  if (op.t === "person") r = await sb.from("edel_grocery_people").upsert({ name: op.n }, { onConflict: "name", ignoreDuplicates: true });
+  if (r.error) throw r.error;
+  if (op.log) {
+    const ex = await sb.from("edel_grocery_log").select("at").eq("at", op.log.at).eq("who", op.log.who).limit(1);
+    if (ex.error) throw ex.error;
+    if (!ex.data.length) { const w = await sb.from("edel_grocery_log").insert(op.log); if (w.error) throw w.error; }
+  }
 }
 
 async function flush() {
   if (flushing || !queue.length) return;
   flushing = true;
   try {
-    while (queue.length) {
-      const batch = queue.slice();
-      const latest = await get();
-      batch.forEach(op => apply(latest, op));
-      latest.log = latest.log.slice(-200);
-      const w = await fetch(API, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "edel-grocery", data: latest }) });
-      if (!w.ok) throw new Error(w.status);
-      queue = queue.slice(batch.length); saveQ();
-      data = withQueue(latest);
-    }
-    status(true); render();
+    while (queue.length) { await send(queue[0]); queue.shift(); saveQ(); }
+    status(true);
   } catch {
     $("status").textContent = "Saving… (will keep retrying)";
-    setTimeout(flush, 15000);
+    setTimeout(flush, 5000);
   } finally { flushing = false; }
 }
 
@@ -240,9 +256,12 @@ function renderLog() {
   }
 }
 
-try { const c = localStorage.getItem("cache"); if (c) { data = withQueue(norm(JSON.parse(c))); render(); } } catch {}
+// Show the last list plus any unsent changes right away, even before the server answers
+try { const c = localStorage.getItem("cache"); data = withQueue(norm(c && c.includes("edel_v2") ? JSON.parse(c) : data)); render(); } catch {}
 load().then(() => { if (!me) openWho(); });
-setInterval(() => { if (!document.hidden) load(); }, 180000);
+setInterval(() => { if (!document.hidden) load(); }, 120000);
+// Live updates: refetch whenever anyone changes something
+sb.channel("edel-grocery").on("postgres_changes", { event: "*", schema: "public", table: "edel_grocery_items" }, () => load()).on("postgres_changes", { event: "*", schema: "public", table: "edel_grocery_people" }, () => load()).subscribe();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 </script>
 </body>

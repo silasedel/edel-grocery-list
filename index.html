@@ -30,7 +30,7 @@ form{display:flex;gap:8px;background:var(--card);backdrop-filter:blur(10px);bord
 input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font-size:17px;padding:10px 12px;outline:none;min-width:0}
 .add{background:var(--accent);color:#fff;border:0;border-radius:14px;padding:0 20px;font-weight:600;font-size:16px;transition:transform .15s}
 .add:active{transform:scale(.92)}
-.list{margin-top:16px;background:var(--card);backdrop-filter:blur(10px);border-radius:20px;overflow:hidden;box-shadow:0 8px 24px rgba(40,110,70,.12)}
+.list{margin-top:16px;background:var(--card);backdrop-filter:blur(10px);border-radius:20px;position:relative;box-shadow:0 8px 24px rgba(40,110,70,.12)}
 .item{display:flex;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid var(--line)}
 .item.new{animation:pop .3s ease}
 @keyframes pop{from{opacity:0;transform:translateY(6px)}}
@@ -182,10 +182,11 @@ async function flush() {
   } finally { flushing = false; }
 }
 
-function change(op) {
+function change(op, quiet) {
   if (op.log) op.log = { who: me || "Someone", text: op.log, at: Date.now() };
   queue.push(op); saveQ();
-  apply(data, op); render();
+  apply(data, op);
+  if (!quiet) render();
   return flush();
 }
 
@@ -200,27 +201,66 @@ $("f").onsubmit = e => {
 };
 $("clear").onclick = () => change({ t: "clear" });
 
+const flown = new Set();
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Play an exit animation on a row, then redraw so the others slide up
+function flyOut(row, frames, ms) {
+  row.style.pointerEvents = "none"; row.style.zIndex = 2; row.style.position = "relative";
+  const a = row.animate(frames, { duration: ms, easing: "ease-in", fill: "forwards" });
+  a.onfinish = () => { row.style.visibility = "hidden"; flown.add(row.dataset.id); render(); };
+}
 function render() {
   const json = JSON.stringify(data.items);
   if (json === lastJson) return;
   lastJson = json;
   const list = [...data.items].sort((a, b) => (a.done - b.done) || (b.at - a.at));
+  // FLIP: remember where rows were so the rest can slide into place
+  const before = {};
+  if (!still) $("list").querySelectorAll(".item").forEach(r => before[r.dataset.id] = r.getBoundingClientRect().top);
   $("list").innerHTML = "";
   if (!list.length) $("list").innerHTML = '<div class="empty">🧺 All stocked up!</div>';
   for (const v of list) {
     const row = document.createElement("div");
     row.className = "item" + (v.done ? " done" : "") + (seen.size && !seen.has(v.id) ? " new" : "");
+    row.dataset.id = v.id;
     row.innerHTML = `<button class="check">${v.done ? "✓" : ""}</button><div class="name"></div><button class="del" title="Remove">×</button>`;
     row.querySelector(".name").textContent = v.name;
     const sub = v.done && v.got ? `✅ ${v.got} got it` : v.by ? `added by ${v.by}` : "";
     if (sub) { const b = document.createElement("div"); b.className = "by"; b.textContent = sub; row.querySelector(".name").append(b); }
     row.querySelector(".check").onclick = () => {
       if (!me) return openWho();
-      change({ t: "set", id: v.id, v: { done: !v.done, got: v.done ? "" : me }, log: v.done ? null : `got ${v.name}` });
+      const op = { t: "set", id: v.id, v: { done: !v.done, got: v.done ? "" : me }, log: v.done ? null : `got ${v.name}` };
+      if (v.done || still) return change(op);
+      change(op, true); // saved right away; the animation is only visual
+      row.classList.add("done"); row.querySelector(".check").textContent = "✓";
+      const dir = Math.random() < .5 ? -1 : 1;
+      flyOut(row, [
+        { transform: "none", opacity: 1 },
+        { transform: "translateY(-10px) scale(1.04)", opacity: 1, offset: .18, easing: "cubic-bezier(.5,0,.9,.5)" },
+        { transform: `translate(${dir * 60}px, 140px) rotate(${dir * 14}deg) scale(.9)`, opacity: 0 },
+      ], 600);
     };
-    row.querySelector(".del").onclick = () => change({ t: "del", id: v.id, log: `removed ${v.name}` });
+    row.querySelector(".del").onclick = () => {
+      const op = { t: "del", id: v.id, log: `removed ${v.name}` };
+      if (still) return change(op);
+      change(op, true);
+      row.style.background = "#ffe1e1";
+      flyOut(row, [
+        { transform: "none", opacity: 1 },
+        { transform: "translateX(-6px) rotate(-1deg)", offset: .1 },
+        { transform: "translateX(6px) rotate(1deg)", offset: .2 },
+        { transform: "translateX(-4px)", offset: .3 },
+        { transform: "translateX(3px)", offset: .4, opacity: 1 },
+        { transform: "scale(.96)", opacity: 0 },
+      ], 420);
+    };
     $("list").append(row);
   }
+  if (!still) $("list").querySelectorAll(".item").forEach(r => {
+    if (flown.delete(r.dataset.id)) return r.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 });
+    const dy = before[r.dataset.id] - r.getBoundingClientRect().top;
+    if (dy) r.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
+  });
   list.forEach(v => seen.add(v.id)); if (!seen.size) seen.add("");
   const left = list.filter(v => !v.done).length;
   $("count").textContent = `${left} item${left === 1 ? "" : "s"} left`;

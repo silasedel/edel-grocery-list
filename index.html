@@ -200,15 +200,23 @@ $("f").onsubmit = e => {
   $("q").value = "";
 };
 
-const flown = new Set();
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // Play an exit animation on a row, then redraw so the others slide up
 function flyOut(row, frames, ms) {
   row.style.pointerEvents = "none"; row.style.zIndex = 2; row.style.position = "relative";
+  animating++;
   const a = row.animate(frames, { duration: ms, easing: "ease-in", fill: "forwards" });
-  a.onfinish = () => { row.style.visibility = "hidden"; flown.add(row.dataset.id); render(); };
+  let done = false;
+  const end = () => { if (done) return; done = true; row.style.visibility = "hidden"; animating--; render(); };
+  a.onfinish = end; setTimeout(end, ms + 300); // fallback if the browser drops the animation
 }
+// Redraws wait until exit animations finish, so a live update can't snap a row back
+let animating = 0;
 function render() {
+  if (animating) return;
+  draw();
+}
+function draw() {
   const json = JSON.stringify(data.items);
   if (json === lastJson) return;
   lastJson = json;
@@ -256,7 +264,6 @@ function render() {
     $("list").append(row);
   }
   if (!still) $("list").querySelectorAll(".item").forEach(r => {
-    if (flown.delete(r.dataset.id)) return r.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 });
     const dy = before[r.dataset.id] - r.getBoundingClientRect().top;
     if (dy) r.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
   });

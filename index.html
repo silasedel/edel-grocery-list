@@ -58,6 +58,11 @@ input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font
 .log{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:15px}
 .log:first-of-type{border-top:0}
 .log small{color:var(--muted);display:block}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1f3d2b;color:#fff;border-radius:999px;padding:10px 10px 10px 18px;display:none;align-items:center;gap:14px;font-size:15px;z-index:6;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:calc(100% - 32px)}
+.toast.show{display:flex}
+.toast button{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:7px 14px;font-weight:600}
+.log.back{cursor:pointer}
+.log .put{margin-left:auto;align-self:center;border:0;background:#e3f8e9;color:#2f9e5c;border-radius:999px;padding:6px 12px;font-weight:600;font-size:13px}
 .close{float:right;border:0;background:none;font-size:24px;color:var(--muted)}
 </style>
 </head>
@@ -75,6 +80,7 @@ input{flex:1;border:0;background:transparent;color:var(--text);font:inherit;font
 <div class="modal" id="whoM"><div class="sheet"><button class="close" data-close>×</button><h2>Who's this?</h2><div class="people" id="people"></div></div></div>
 <div class="modal" id="logM"><div class="sheet"><button class="close" data-close>×</button><h2>📜 Activity log</h2><div id="logList"></div></div></div>
 
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="undo">Undo</button></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const sb = supabase.createClient("https://qhjqaijkthmmpllgpspl.supabase.co", "sb_publishable_wO3zgPkdNH2Effsy6ewrmg_XP5oLUqO", { auth: { persistSession: false } });
@@ -237,6 +243,7 @@ function draw() {
     row.querySelector(".check").onclick = () => {
       if (!me) return openWho();
       const op = { t: "del", id: v.id, log: `got ${v.name}` }; // got it: off the list, kept in the log
+      offerUndo(`Got ${v.name}`, v);
       if (still) return change(op);
       change(op, true); // saved right away; the animation is only visual
       row.classList.add("done"); row.querySelector(".check").textContent = "✓";
@@ -249,6 +256,7 @@ function draw() {
     };
     row.querySelector(".del").onclick = () => {
       const op = { t: "del", id: v.id, log: `removed ${v.name}` };
+      offerUndo(`Removed ${v.name}`, v);
       if (still) return change(op);
       change(op, true);
       row.style.background = "#ffe1e1";
@@ -272,6 +280,17 @@ function draw() {
   $("count").textContent = `${left} item${left === 1 ? "" : "s"} left`;
 }
 
+// Put an item back on the list
+function putBack(name, from) {
+  const item = { ...(from || {}), id: Date.now() + Math.random().toString(36).slice(2, 6), name, done: false, got: "", by: (from && from.by) || me || "", at: Date.now() };
+  change({ t: "add", id: item.id, item, log: `put back ${name}` });
+}
+let undoTimer;
+function offerUndo(msg, v) {
+  $("toastMsg").textContent = msg; $("toast").classList.add("show");
+  $("undo").onclick = () => { $("toast").classList.remove("show"); putBack(v.name, v); };
+  clearTimeout(undoTimer); undoTimer = setTimeout(() => $("toast").classList.remove("show"), 5000);
+}
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? "just now" : s < 3600 ? Math.floor(s/60) + "m ago" : s < 86400 ? Math.floor(s/3600) + "h ago" : new Date(t).toLocaleDateString(); }
 function renderLog() {
   const el = $("logList"); el.innerHTML = "";
@@ -281,6 +300,8 @@ function renderLog() {
     const t = document.createElement("div"); t.textContent = `${l.who} ${l.text}`;
     const s = document.createElement("small"); s.textContent = ago(l.at); t.append(s);
     row.append(t);
+    const m = /^(got|removed) (.+)$/.exec(l.text);
+    if (m && !data.items.some(i => i.name === m[2])) { const b = document.createElement("button"); b.className = "put"; b.textContent = "Put back"; b.onclick = () => { putBack(m[2]); b.remove(); }; row.append(b); }
     el.append(row);
   }
 }
